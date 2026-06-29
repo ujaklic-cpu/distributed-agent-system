@@ -1,0 +1,57 @@
+services:
+
+  docker-socket-proxy:
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.1.1}
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
+  node-agent:
+    image: local-agent/node-agent:7.1
+    build:
+      context: ..
+      dockerfile: node-agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ID: ${NODE_ID:-local-node-01}
+      NODE_NAME: ${NODE_NAME:-local-node-01}
+      NODE_AGENT_VERSION: ${NODE_AGENT_VERSION:-0.7.0}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://ORCHESTRATOR_HOST:8080}
+      PUBLIC_NODE_URL: ${PUBLIC_NODE_URL:-http://NODE_HOST:8081}
+      SMART_AGENT_URL: ${SMART_AGENT_URL:-http://smart-agent:8090}
+      WORKER_AGENT_URL: ${WORKER_AGENT_URL:-http://code-worker-agent:8090}
+      CODE_WORKER_AGENT_URL: ${CODE_WORKER_AGENT_URL:-http://code-worker-agent:8090}
+      FAST_WORKER_AGENT_URL: ${FAST_WORKER_AGENT_URL:-http://fast-worker-agent:8090}
+      LOADED_MODELS: ${NODE_LOADED_MODELS:-qwen3:32b,qwen2.5-coder:7b,llama3.1:8b}
+      CAPABILITIES: ${NODE_CAPABILITIES:-smart_agent,code_worker,fast_worker,tool_shell,tool_test,tool_internet,tool_filesystem,tool_build,tool_analysis}
+      TOOL_IMAGE_SHELL: ${TOOL_IMAGE_SHELL:-local-agent/tool-shell:0.7.0}
+      TOOL_IMAGE_TEST: ${TOOL_IMAGE_TEST:-local-agent/tool-test:0.7.0}
+      TOOL_IMAGE_INTERNET: ${TOOL_IMAGE_INTERNET:-local-agent/tool-internet:0.7.0}
+      TOOL_IMAGE_FILESYSTEM: ${TOOL_IMAGE_FILESYSTEM:-local-agent/tool-filesystem:0.7.0}
+      TOOL_IMAGE_BUILD: ${TOOL_IMAGE_BUILD:-local-agent/tool-build:0.7.0}
+      TOOL_IMAGE_ANALYSIS: ${TOOL_IMAGE_ANALYSIS:-local-agent/tool-analysis:0.7.0}
+      NODE_WORKSPACE_ROOT: /workspaces
+      HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-../workspaces}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Production startup fails unless CLUSTER_TOKEN is overridden with a strong secret.
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:-change_me_cluster_token}
+      TOOL_CONTAINER_AUTO_REMOVE: ${TOOL_CONTAINER_AUTO_REMOVE:-true}
+      TOOL_CONTAINER_READ_ONLY_ROOT: ${TOOL_CONTAINER_READ_ONLY_ROOT:-true}
+      TOOL_CONTAINER_TMPFS: ${TOOL_CONTAINER_TMPFS:-true}
+      TOOL_CONTAINER_USER: ${TOOL_CONTAINER_USER:-1000:1000}
+      DOCKER_HOST: ${DOCKER_HOST:-tcp://docker-socket-proxy:2375}
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-../workspaces}:/workspaces
+    depends_on:
+      - docker-socket-proxy
+    ports:
+      - "8081:8081"

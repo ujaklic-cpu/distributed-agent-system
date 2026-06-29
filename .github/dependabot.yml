@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "docker"
+    directory: "/orchestrator"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/node-agent"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/agent-server"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/tool-images/shell"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

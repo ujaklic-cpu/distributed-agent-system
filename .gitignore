@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+logs/*
+workspaces/*
+.venv/
+.cache/
+.DS_Store
+tmp-*
+tmp_*
+*.md
+!README.md
+HARD_TASK_REPORT.md
+artifacts/

@@ -1,0 +1,249 @@
+name: distributed-agent-system-prod
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  stop_grace_period: 45s
+  networks:
+    - backend
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  postgres:
+    <<: *service-defaults
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agents}
+      POSTGRES_USER: ${POSTGRES_USER:-agents}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    command:
+      - sh
+      - -c
+      - >
+        redis-server
+        --appendonly ${REDIS_APPENDONLY:-yes}
+        --save "${REDIS_SAVE:-60 1000}"
+        --requirepass "$${REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  minio:
+    <<: *service-defaults
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${MINIO_API_BIND:-127.1.0.1:9000}:9000"
+      - "${MINIO_CONSOLE_BIND:-127.1.0.1:9001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  ollama:
+    <<: *service-defaults
+    image: ollama/ollama
+    runtime: nvidia
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  orchestrator:
+    <<: *service-defaults
+    image: ${ORCHESTRATOR_IMAGE:-local-agent/orchestrator-api:7.1}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      QUEUE_URL: ${QUEUE_URL:?set QUEUE_URL}
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:?set CLUSTER_TOKEN}
+      NODE_TOKENS: ${NODE_TOKENS:?set NODE_TOKENS}
+      OPERATOR_TOKENS: ${OPERATOR_TOKENS:?set OPERATOR_TOKENS}
+      ADMIN_TOKENS: ${ADMIN_TOKENS:?set ADMIN_TOKENS}
+      READONLY_TOKENS: ${READONLY_TOKENS:?set READONLY_TOKENS}
+      DEPRECATED_TOKENS: ${DEPRECATED_TOKENS:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS}
+      NODE_AGENT_URL: ${NODE_AGENT_URL:-http://node-agent:8081}
+      ORCHESTRATOR_PROTOCOL_VERSION: ${ORCHESTRATOR_PROTOCOL_VERSION:-2026-06-14}
+      MIN_NODE_PROTOCOL_VERSION: ${MIN_NODE_PROTOCOL_VERSION:-2026-06-14}
+      ORCHESTRATOR_WORKSPACE_ROOT: /var/lib/orchestrator/workspaces
+      ARTIFACT_STORAGE_ROOT: /var/lib/orchestrator/artifacts
+      READINESS_CHECK_TIMEOUT_SECONDS: ${READINESS_CHECK_TIMEOUT_SECONDS:-2}
+      SHUTDOWN_GRACE_PERIOD_SECONDS: ${SHUTDOWN_GRACE_PERIOD_SECONDS:-30}
+      NODE_DEAD_AFTER_SECONDS: ${NODE_DEAD_AFTER_SECONDS:-300}
+      NODE_UNREACHABLE_AFTER_SECONDS: ${NODE_UNREACHABLE_AFTER_SECONDS:-60}
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-/opt/agent-workspaces}:/var/lib/orchestrator/workspaces
+      - artifacts:/var/lib/orchestrator/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "${ORCHESTRATOR_BIND:-127.1.0.1:8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/readyz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_signal: SIGTERM
+
+  smart-agent:
+    <<: *service-defaults
+    image: local-agent/smart-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    environment:
+      AGENT_ROLE: smart_agent
+      MODEL_NAME: ${SMART_MODEL_NAME:-llama3.2:3b}
+      MODEL_BACKEND: ${MODEL_BACKEND:-ollama}
+      MOCK_AGENT: ${MOCK_AGENT:-false}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS}
+
+  code-worker-agent:
+    <<: *service-defaults
+    image: local-agent/code-worker-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    environment:
+      AGENT_ROLE: code_worker
+      MODEL_NAME: ${CODE_WORKER_MODEL_NAME:-llama3.2:3b}
+      MODEL_BACKEND: ${MODEL_BACKEND:-ollama}
+      MOCK_AGENT: ${MOCK_AGENT:-false}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS}
+
+  fast-worker-agent:
+    <<: *service-defaults
+    image: local-agent/fast-worker-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    environment:
+      AGENT_ROLE: fast_worker
+      MODEL_NAME: ${FAST_WORKER_MODEL_NAME:-llama3.2:3b}
+      MODEL_BACKEND: ${MODEL_BACKEND:-ollama}
+      MOCK_AGENT: ${MOCK_AGENT:-false}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS}
+
+  docker-socket-proxy:
+    <<: *service-defaults
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.1.1}
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      PING: 1
+      POST: 1
+      VERSION: 1
+      VOLUMES: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  node-agent:
+    <<: *service-defaults
+    image: ${NODE_AGENT_IMAGE:-local-agent/node-agent:7.1}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      PUBLIC_NODE_URL: http://node-agent:8081
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:?set CLUSTER_TOKEN}
+      NODE_TOKENS: ${NODE_TOKENS:?set NODE_TOKENS}
+      DEPRECATED_TOKENS: ${DEPRECATED_TOKENS:-}
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      NODE_AGENT_VERSION: ${NODE_AGENT_VERSION:-0.7.0}
+      PROTOCOL_VERSION: ${NODE_PROTOCOL_VERSION:-2026-06-14}
+      NODE_WORKSPACE_ROOT: /var/lib/orchestrator/workspaces
+      HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-/opt/agent-workspaces}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS}
+      SMART_AGENT_URL: http://smart-agent:8090
+      WORKER_AGENT_URL: http://code-worker-agent:8090
+      CODE_WORKER_AGENT_URL: http://code-worker-agent:8090
+      FAST_WORKER_AGENT_URL: http://fast-worker-agent:8090
+      CAPABILITIES: ${NODE_CAPABILITIES:-smart_agent,code_worker,fast_worker,tool_shell,tool_test,tool_internet,tool_filesystem,tool_build,tool_analysis}
+      READINESS_CHECK_TIMEOUT_SECONDS: ${READINESS_CHECK_TIMEOUT_SECONDS:-2}
+      SHUTDOWN_GRACE_PERIOD_SECONDS: ${SHUTDOWN_GRACE_PERIOD_SECONDS:-30}
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-/opt/agent-workspaces}:/var/lib/orchestrator/workspaces
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
+      smart-agent:
+        condition: service_started
+      code-worker-agent:
+        condition: service_started
+      fast-worker-agent:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/readyz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_signal: SIGTERM
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  ollama_data:
+  workspaces:
+  artifacts:
+
+networks:
+  backend:
+    driver: bridge

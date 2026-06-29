@@ -1,0 +1,319 @@
+services:
+  orchestrator-api:
+    image: local-agent/orchestrator-api:7.1
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://agents:change_me@postgres:5432/agents}
+      # In production, use a Redis URL with credentials, for example redis://:<REDIS_PASSWORD>@redis:6379/0.
+      QUEUE_URL: ${QUEUE_URL:-redis://redis:6379/0}
+      NODE_AGENT_URL: ${NODE_AGENT_URL:-http://node-agent:8081}
+      NODE_UNREACHABLE_AFTER_SECONDS: ${NODE_UNREACHABLE_AFTER_SECONDS:-15}
+      NODE_DEAD_AFTER_SECONDS: ${NODE_DEAD_AFTER_SECONDS:-60}
+      MIN_NODE_AGENT_VERSION: ${MIN_NODE_AGENT_VERSION:-0.7.0}
+      MAX_NODE_AGENT_MAJOR_VERSION: ${MAX_NODE_AGENT_MAJOR_VERSION:-0}
+      MAX_OPTIMIZATION_ROUNDS: ${MAX_OPTIMIZATION_ROUNDS:-2}
+      AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-90}
+      TOOL_RUN_RETENTION_DAYS: ${TOOL_RUN_RETENTION_DAYS:-30}
+      TASK_RETENTION_DAYS: ${TASK_RETENTION_DAYS:-180}
+      REQUIRE_FINAL_VERIFICATION: ${REQUIRE_FINAL_VERIFICATION:-true}
+      ORCHESTRATOR_WORKSPACE_ROOT: /workspaces
+      ARTIFACT_STORAGE_ROOT: /artifacts
+      ARTIFACT_URI_PREFIX: ${ARTIFACT_URI_PREFIX:-artifact://}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:-change_me_cluster_token}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change_me_operator_token}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change_me_admin_token}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-../workspaces}:/workspaces
+      - artifact-data:/artifacts
+    command: sh -c "alembic upgrade head && uvicorn orchestrator.app:app --host 0.0.0.0 --port 8080"
+    depends_on:
+      - postgres
+      - redis
+
+  orchestrator-worker:
+    image: local-agent/orchestrator-worker:7.1
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    restart: unless-stopped
+    command: sh -c "alembic upgrade head && python -m orchestrator.worker"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://agents:change_me@postgres:5432/agents}
+      # In production, use a Redis URL with credentials, for example redis://:<REDIS_PASSWORD>@redis:6379/0.
+      QUEUE_URL: ${QUEUE_URL:-redis://redis:6379/0}
+      NODE_AGENT_URL: ${NODE_AGENT_URL:-http://node-agent:8081}
+      NODE_UNREACHABLE_AFTER_SECONDS: ${NODE_UNREACHABLE_AFTER_SECONDS:-15}
+      NODE_DEAD_AFTER_SECONDS: ${NODE_DEAD_AFTER_SECONDS:-60}
+      MIN_NODE_AGENT_VERSION: ${MIN_NODE_AGENT_VERSION:-0.7.0}
+      MAX_NODE_AGENT_MAJOR_VERSION: ${MAX_NODE_AGENT_MAJOR_VERSION:-0}
+      MAX_OPTIMIZATION_ROUNDS: ${MAX_OPTIMIZATION_ROUNDS:-2}
+      AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-90}
+      TOOL_RUN_RETENTION_DAYS: ${TOOL_RUN_RETENTION_DAYS:-30}
+      TASK_RETENTION_DAYS: ${TASK_RETENTION_DAYS:-180}
+      REQUIRE_FINAL_VERIFICATION: ${REQUIRE_FINAL_VERIFICATION:-true}
+      ORCHESTRATOR_WORKSPACE_ROOT: /workspaces
+      ARTIFACT_STORAGE_ROOT: /artifacts
+      ARTIFACT_URI_PREFIX: ${ARTIFACT_URI_PREFIX:-artifact://}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:-change_me_cluster_token}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change_me_operator_token}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change_me_admin_token}
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-../workspaces}:/workspaces
+      - artifact-data:/artifacts
+    depends_on:
+      - postgres
+      - redis
+      - node-agent
+
+
+  docker-socket-proxy:
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.1.1}
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
+  node-agent:
+    image: local-agent/node-agent:7.1
+    build:
+      context: ..
+      dockerfile: node-agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ID: local-node-01
+      NODE_NAME: local-node-01
+      ORCHESTRATOR_URL: http://orchestrator-api:8080
+      PUBLIC_NODE_URL: http://node-agent:8081
+      SMART_AGENT_URL: ${SMART_AGENT_URL:-http://smart-agent:8090}
+      WORKER_AGENT_URL: ${WORKER_AGENT_URL:-http://code-worker-agent:8090}
+      CODE_WORKER_AGENT_URL: ${CODE_WORKER_AGENT_URL:-http://code-worker-agent:8090}
+      FAST_WORKER_AGENT_URL: ${FAST_WORKER_AGENT_URL:-http://fast-worker-agent:8090}
+      LOADED_MODELS: ${NODE_LOADED_MODELS:-qwen3:32b,qwen2.5-coder:7b,llama3.1:8b}
+      CAPABILITIES: ${NODE_CAPABILITIES:-smart_agent,code_worker,fast_worker,tool_shell,tool_test,tool_internet,tool_filesystem,tool_build,tool_analysis}
+      TOOL_IMAGE_SHELL: ${TOOL_IMAGE_SHELL:-local-agent/tool-shell:0.7.0}
+      TOOL_IMAGE_TEST: ${TOOL_IMAGE_TEST:-local-agent/tool-test:0.7.0}
+      TOOL_IMAGE_INTERNET: ${TOOL_IMAGE_INTERNET:-local-agent/tool-internet:0.7.0}
+      TOOL_IMAGE_FILESYSTEM: ${TOOL_IMAGE_FILESYSTEM:-local-agent/tool-filesystem:0.7.0}
+      TOOL_IMAGE_BUILD: ${TOOL_IMAGE_BUILD:-local-agent/tool-build:0.7.0}
+      TOOL_IMAGE_ANALYSIS: ${TOOL_IMAGE_ANALYSIS:-local-agent/tool-analysis:0.7.0}
+      NODE_WORKSPACE_ROOT: /workspaces
+      HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-../workspaces}
+      ALLOW_HOST_TOOL_FALLBACK: "false"
+      TOOL_CONTAINER_AUTO_REMOVE: ${TOOL_CONTAINER_AUTO_REMOVE:-true}
+      TOOL_CONTAINER_READ_ONLY_ROOT: ${TOOL_CONTAINER_READ_ONLY_ROOT:-true}
+      TOOL_CONTAINER_TMPFS: ${TOOL_CONTAINER_TMPFS:-true}
+      TOOL_CONTAINER_USER: ${TOOL_CONTAINER_USER:-1000:1000}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN:-change_me_cluster_token}
+      DOCKER_HOST: ${DOCKER_HOST:-tcp://docker-socket-proxy:2375}
+    ports:
+      - "8081:8081"
+    volumes:
+      - ${HOST_WORKSPACE_ROOT:-../workspaces}:/workspaces
+    depends_on:
+      - docker-socket-proxy
+      - smart-agent
+      - code-worker-agent
+      - fast-worker-agent
+
+  smart-agent:
+    image: local-agent/smart-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_ROLE: smart_agent
+      MODEL_NAME: ${SMART_MODEL_NAME:-mock-agent}
+      MODEL_BACKEND: ${MODEL_BACKEND:-mock}
+      MOCK_AGENT: ${MOCK_AGENT:-true}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+    ports:
+      - "8090:8090"
+
+  code-worker-agent:
+    image: local-agent/code-worker-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_ROLE: code_worker
+      MODEL_NAME: ${CODE_WORKER_MODEL_NAME:-mock-agent}
+      MODEL_BACKEND: ${MODEL_BACKEND:-mock}
+      MOCK_AGENT: ${MOCK_AGENT:-true}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+
+  fast-worker-agent:
+    image: local-agent/fast-worker-agent:7.1
+    build:
+      context: ..
+      dockerfile: agent-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_ROLE: fast_worker
+      MODEL_NAME: ${FAST_WORKER_MODEL_NAME:-mock-agent}
+      MODEL_BACKEND: ${MODEL_BACKEND:-mock}
+      MOCK_AGENT: ${MOCK_AGENT:-true}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      MAX_RESPONSE_BODY_BYTES: ${MAX_RESPONSE_BODY_BYTES:-10485760}
+      LOG_RAW_REQUEST_BODIES: ${LOG_RAW_REQUEST_BODIES:-false}
+
+  tool-shell-build:
+    image: local-agent/tool-shell:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/shell/Dockerfile
+    command: ["python", "-c", "print('tool shell image built')"]
+
+  tool-test-build:
+    image: local-agent/tool-test:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/test/Dockerfile
+    command: ["python", "-c", "print('tool test image built')"]
+
+  tool-internet-build:
+    image: local-agent/tool-internet:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/internet/Dockerfile
+    command: ["python", "-c", "print('tool internet image built')"]
+
+  tool-filesystem-build:
+    image: local-agent/tool-filesystem:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/filesystem/Dockerfile
+    command: ["python", "-c", "print('tool filesystem image built')"]
+
+  tool-build-build:
+    image: local-agent/tool-build:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/build/Dockerfile
+    command: ["python", "-c", "print('tool build image built')"]
+
+  tool-analysis-build:
+    image: local-agent/tool-analysis:0.7.0
+    build:
+      context: ..
+      dockerfile: tool-images/analysis/Dockerfile
+    command: ["python", "-c", "print('tool analysis image built')"]
+
+  postgres:
+    image: postgres:16.6
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      POSTGRES_DB: ${POSTGRES_DB:-agents}
+      POSTGRES_USER: ${POSTGRES_USER:-agents}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ "$$ENVIRONMENT" = "production" ]; then
+          if [ -z "$$POSTGRES_PASSWORD" ] || [ "$$POSTGRES_PASSWORD" = "change_me" ]; then
+            echo "POSTGRES_PASSWORD must be set to a strong secret in production" >&2
+            exit 1
+          fi
+        fi
+        exec docker-entrypoint.sh postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4.1
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_me_redis_password}
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$$ENVIRONMENT" = "production" ]; then
+          if [ -z "$$REDIS_PASSWORD" ] || [ "$$REDIS_PASSWORD" = "change_me_redis_password" ]; then
+            echo "REDIS_PASSWORD must be set to a strong secret in production" >&2
+            exit 1
+          fi
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agents}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me_minio_password}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ "$$ENVIRONMENT" = "production" ]; then
+          if [ -z "$$MINIO_ROOT_USER" ] || [ "$$MINIO_ROOT_USER" = "agents" ]; then
+            echo "MINIO_ROOT_USER must be set to a non-default value in production" >&2
+            exit 1
+          fi
+          if [ -z "$$MINIO_ROOT_PASSWORD" ] || [ "$$MINIO_ROOT_PASSWORD" = "change_me_minio_password" ]; then
+            echo "MINIO_ROOT_PASSWORD must be set to a strong secret in production" >&2
+            exit 1
+          fi
+        fi
+        exec minio server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  artifact-data:
