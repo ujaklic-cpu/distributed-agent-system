@@ -31,7 +31,17 @@ The equivalent Make targets are `make install`, `make lint`, `make typecheck`, a
 
 ## Local Compose stack
 
-Create `.env.test` with local-only values, then start the control stack:
+Docker, Docker Compose, and access to `/var/run/docker.sock` are required for this stack. The supplied control Compose file defaults to mock model servers, but its default database and cluster tokens are intentionally insecure. Create `.env.test` with local-only replacements before starting it:
+
+```env
+DATABASE_URL=postgresql+psycopg://agents:local-postgres-password@postgres:5432/agents
+CLUSTER_TOKEN=local-cluster-token
+OPERATOR_TOKEN=local-operator-token
+ADMIN_TOKEN=local-admin-token
+HOST_WORKSPACE_ROOT=./workspaces
+```
+
+Keep this file local. Start the control stack:
 
 ```bash
 docker compose -f deploy/docker-compose.control.yml --env-file .env.test up --build -d
@@ -46,6 +56,8 @@ curl -sS -X POST http://localhost:8080/tasks \
 curl -sS http://localhost:8080/tasks/<task_id>
 curl -sS http://localhost:8080/tasks/<task_id>/result
 ```
+
+The task ID is returned by the `POST /tasks` response. Stop this local stack with `docker compose -f deploy/docker-compose.control.yml --env-file .env.test down`; do not add `-v` unless removing local database and artifact volumes is intended.
 
 Run the Compose integration suite only when Docker is available:
 
