@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install audit tools
-        run: python -m pip install pip-audit==2.7.3 cyclonedx-bom==5.1.1
+        run: python -m pip install pip-audit==2.7.3 cyclonedx-bom==4.4.0
       - name: Audit Python dependencies
         run: make security-audit
       - name: Generate Python SBOM
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.3
+        uses: aquasecurity/setup-trivy@v0.3.1
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0.17.7
       - name: Build service and tool images
