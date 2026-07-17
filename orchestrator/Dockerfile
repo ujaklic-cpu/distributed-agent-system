@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY shared/ ./shared/
 COPY orchestrator/ ./orchestrator/
+COPY node_agent/ ./node_agent/
 COPY agent_server/ ./agent_server/
 COPY pyproject.toml ./
 
