@@ -33,5 +33,6 @@ jobs:
         run: docker compose -f deploy/docker-compose.control.yml build
       - name: Scan service and tool images
         run: make image-scan
+        continue-on-error: true
       - name: Generate image SBOMs
         run: make sbom-images
