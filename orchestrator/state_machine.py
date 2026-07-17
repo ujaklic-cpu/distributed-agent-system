@@ -607,19 +607,6 @@ class TaskRunner:
         final_content = ""
 
         reqs = role_requirements(executor, mode)
-        node_id = None
-        node_url = None
-        with SessionLocal() as session:
-            task = session.get(TaskRecord, task_id)
-            if task and node_id:
-                assigned = json.loads(task.assigned_nodes or "[]")
-                if node_id not in assigned:
-                    assigned.append(node_id)
-                task.assigned_nodes = json.dumps(assigned)
-            subtask_record = session.get(SubtaskRecord, f"{task_id}_{subtask.id}")
-            if subtask_record and node_id:
-                subtask_record.assigned_node_id = node_id
-            session.commit()
 
         for _step in range(settings.max_agent_steps):
             agent_job = AgentJobRequest(
@@ -634,7 +621,6 @@ class TaskRunner:
                 raise RuntimeError(f"no node available for {executor.value}")
             attach_execution_context(agent_job, job_id)
             node_id = node.id
-            node_url = node.base_url
             with SessionLocal() as session:
                 task = session.get(TaskRecord, task_id)
                 if task:
@@ -646,7 +632,7 @@ class TaskRunner:
                 if subtask_record:
                     subtask_record.assigned_node_id = node_id
                 session.commit()
-            agent_result = self.model_client.run_agent(agent_job, base_url=node_url)
+            agent_result = self.model_client.run_agent(agent_job, base_url=node.base_url)
             _finish_job_or_raise(job_id, agent_result, _job_terminal_status(agent_result.status), task_id, "agent")
             if agent_result.status != "ok" or not agent_result.response:
                 final_content = agent_result.error or "agent error"
@@ -665,7 +651,9 @@ class TaskRunner:
 
             blocked = False
             for req in response.tool_requests:
-                tool_result = self._run_tool_request(task_id, workspace_id, f"{task_id}_{subtask.id}", req, repeated_tool_hashes)
+                tool_result = self._run_tool_request(
+                    task_id, workspace_id, f"{task_id}_{subtask.id}", req, repeated_tool_hashes
+                )
                 tool_history.append(tool_result)
                 messages.append(AgentMessage(role="tool", content=json.dumps(tool_result, default=str)))
                 if tool_result.get("status") in {"blocked", "timeout"}:
@@ -772,7 +760,14 @@ class TaskRunner:
     ) -> dict[str, Any]:
         args = request.normalized_args()
         command = str(args.get("command") or "")
-        tool_workspace = str(args.get("workspace_id") or workspace_id)
+        requested_workspace = str(args.get("workspace_id") or workspace_id)
+        if requested_workspace != workspace_id:
+            return {
+                "status": "blocked",
+                "error": "tool request cannot override the assigned workspace",
+                "tool": request.tool.value,
+            }
+        tool_workspace = workspace_id
         network = bool(args.get("network", request.tool.value == "internet"))
         requested_limits = args.get("limits")
         if isinstance(requested_limits, ToolLimits):
@@ -1053,9 +1048,7 @@ class TaskRunner:
                 {"category": "artifact", "count": len(artifacts), "artifacts": artifacts},
             )
             session.commit()
-        if artifacts:
-            return artifacts
-        return [{"name": "result.md", "uri": f"workspace://{workspace_id}/output/result.md"}]
+        return artifacts
 
     def _final_check(
         self,

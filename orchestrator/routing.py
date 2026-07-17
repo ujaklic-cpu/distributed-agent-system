@@ -49,7 +49,7 @@ def route_subtask(
     mode: TaskMode = TaskMode.normal,
     previous_failures: int = 0,
 ) -> RouteDecision:
-    """Apply deterministic Phase 3 routing rules.
+    """Choose an executor from task difficulty, risk, and requested role.
 
     Planner output is treated as advice. High-risk, high-difficulty, failed, or
     security-sensitive work is forced to the smart agent. Medium work goes to a

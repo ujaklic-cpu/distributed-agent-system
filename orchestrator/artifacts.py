@@ -33,6 +33,8 @@ def collect_workspace_artifacts(task_id: str, workspace_id: str) -> list[dict[st
     total_bytes = 0
     total_files = 0
     for candidate in workspace.rglob("*"):
+        if candidate.is_symlink():
+            continue
         if candidate.is_file():
             total_files += 1
             total_bytes += candidate.stat().st_size
@@ -49,7 +51,7 @@ def collect_workspace_artifacts(task_id: str, workspace_id: str) -> list[dict[st
         if not source_dir.exists():
             continue
         for path in source_dir.rglob("*"):
-            if not path.is_file() or path in seen:
+            if path.is_symlink() or not path.is_file() or path in seen:
                 continue
             seen.add(path)
             if path.stat().st_size > settings.max_artifact_bytes:

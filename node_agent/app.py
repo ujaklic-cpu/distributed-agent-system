@@ -76,6 +76,7 @@ install_security_middleware(
     max_response_body_bytes=settings.max_response_body_bytes,
 )
 
+
 def require_cluster_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
     tokens = parse_token_list(settings.node_tokens) or (
         [] if settings.environment == "production" else parse_token_list(settings.cluster_token)
@@ -87,6 +88,7 @@ def require_cluster_auth(request: Request, authorization: str | None = Header(de
         deprecated_tokens=parse_token_list(settings.deprecated_tokens),
         allow_empty=settings.environment != "production",
     )
+
 
 @app.get("/health")
 def health() -> dict:

@@ -57,3 +57,21 @@ def test_collect_workspace_artifacts_copies_and_hashes(tmp_path):
     finally:
         settings.orchestrator_workspace_root = old_workspace_root
         settings.artifact_storage_root = old_artifact_root
+
+
+def test_collect_workspace_artifacts_does_not_follow_symlinks(tmp_path):
+    old_workspace_root = settings.orchestrator_workspace_root
+    old_artifact_root = settings.artifact_storage_root
+    try:
+        settings.orchestrator_workspace_root = str(tmp_path / "workspaces")
+        settings.artifact_storage_root = str(tmp_path / "artifact-store")
+        output = Path(settings.orchestrator_workspace_root) / "demo" / "output"
+        output.mkdir(parents=True)
+        outside = tmp_path / "outside.txt"
+        outside.write_text("host data", encoding="utf-8")
+        (output / "linked.txt").symlink_to(outside)
+
+        assert collect_workspace_artifacts("task_1", "demo") == []
+    finally:
+        settings.orchestrator_workspace_root = old_workspace_root
+        settings.artifact_storage_root = old_artifact_root

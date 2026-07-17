@@ -12,5 +12,7 @@ tmp-*
 tmp_*
 *.md
 !README.md
+!docs/
+!docs/*.md
 HARD_TASK_REPORT.md
 artifacts/

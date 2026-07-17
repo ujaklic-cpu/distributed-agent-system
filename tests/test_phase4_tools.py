@@ -2,8 +2,9 @@ from pathlib import Path
 
 from node_agent.config import settings
 from node_agent.docker_manager import DockerToolRunner, _resolve_host_workspace
+from orchestrator.state_machine import TaskRunner
 from shared.policy import DEFAULT_TOOL_POLICY, PolicyViolation
-from shared.schemas import ToolJobRequest, ToolType
+from shared.schemas import ToolJobRequest, ToolRequest, ToolType
 
 
 def test_internet_tool_requires_network_flag():
@@ -73,6 +74,29 @@ def test_docker_runner_uses_workspace_as_only_writable_mount(monkeypatch):
     assert options["environment"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+def test_read_only_tool_mounts_only_result_directory_as_writable(monkeypatch):
+    monkeypatch.setattr(settings, "node_workspace_root", "/workspaces")
+    runner = DockerToolRunner.__new__(DockerToolRunner)
+    job = ToolJobRequest(
+        task_id="task_1",
+        tool=ToolType.analysis,
+        workspace_id="demo",
+        command="find .",
+    )
+
+    options = runner._container_run_options(
+        job,
+        "local-agent/tool-analysis:0.7.0",
+        "/host/workspaces/demo",
+        Path("/workspaces/demo/.tool-results/result.json"),
+    )
+
+    assert options["volumes"] == {
+        "/host/workspaces/demo": {"bind": "/workspace", "mode": "ro"},
+        "/host/workspaces/demo/.tool-results": {"bind": "/workspace/.tool-results", "mode": "rw"},
+    }
+
+
 def test_host_workspace_resolution_stays_under_root(monkeypatch, tmp_path):
     root = tmp_path / "workspaces"
     root.mkdir()
@@ -97,3 +121,12 @@ def test_host_workspace_resolution_rejects_symlink_escape(monkeypatch, tmp_path)
         assert "escapes host_workspace_root" in str(exc)
         return
     raise AssertionError("expected ValueError")
+
+
+def test_tool_request_cannot_override_assigned_workspace():
+    request = ToolRequest(tool=ToolType.shell, args={"command": "true", "workspace_id": "other"})
+
+    result = TaskRunner()._run_tool_request("task", "assigned", "subtask", request, set())
+
+    assert result["status"] == "blocked"
+    assert "assigned workspace" in result["error"]

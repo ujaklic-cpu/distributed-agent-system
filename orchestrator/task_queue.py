@@ -14,8 +14,7 @@ class RedisTaskQueue:
         self.key = "tasks.new"
 
     def enqueue(self, task_id: str, priority: int = 5) -> None:
-        # Redis lists are enough for the MVP. Priority is persisted in DB and can be
-        # replaced by sorted sets or Redis Streams in Phase 2.
+        # Queue order is FIFO; priority remains task metadata and does not affect dequeue order.
         payload = json.dumps({"task_id": task_id, "priority": priority})
         self.redis.lpush(self.key, payload)
 

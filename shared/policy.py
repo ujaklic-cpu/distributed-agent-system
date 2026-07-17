@@ -14,6 +14,26 @@ class PolicyViolation(Exception):
 _MEMORY_RE = re.compile(r"^[1-9][0-9]*(?:[kKmMgG])?$|^[1-9][0-9]*(?:MiB|GiB|MB|GB)$")
 
 
+def _memory_bytes(value: str) -> int:
+    match = re.fullmatch(r"([1-9][0-9]*)([kKmMgG]|MiB|GiB|MB|GB)?", value)
+    if match is None:
+        raise PolicyViolation("memory limit has an invalid format")
+    amount = int(match.group(1))
+    unit = (match.group(2) or "").lower()
+    multipliers = {
+        "": 1,
+        "k": 1_000,
+        "m": 1_000_000,
+        "g": 1_000_000_000,
+        "kb": 1_000,
+        "mb": 1_000_000,
+        "gb": 1_000_000_000,
+        "mib": 1024**2,
+        "gib": 1024**3,
+    }
+    return amount * multipliers[unit]
+
+
 @dataclass(frozen=True)
 class ToolLimitDefaults:
     cpus: float
@@ -94,6 +114,8 @@ class ToolPolicy:
                 raise PolicyViolation("timeout exceeds tool metadata policy")
             if limits.output_limit_mb > defaults.output_limit_mb:
                 raise PolicyViolation("output limit exceeds tool metadata policy")
+            if _memory_bytes(limits.memory) > _memory_bytes(defaults.memory):
+                raise PolicyViolation("memory limit exceeds tool metadata policy")
 
 
 DEFAULT_TOOL_POLICY = ToolPolicy()

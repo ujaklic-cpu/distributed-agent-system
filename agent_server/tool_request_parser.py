@@ -1,10 +1,24 @@
 from __future__ import annotations
 
 import json
-import re
+import shlex
+from pathlib import PurePosixPath
 from typing import Any
 
+from pydantic import ValidationError
+
 from shared.schemas import ToolRequest
+
+
+def _safe_file_name(value: str) -> str | None:
+    path = PurePosixPath(value)
+    if not value or path.is_absolute() or ".." in path.parts or path == PurePosixPath("."):
+        return None
+    return value
+
+
+def _write_command(file_name: str, content: str) -> str:
+    return f"printf %s {shlex.quote(content)} > {shlex.quote(file_name)}"
 
 
 def _find_json(text: str) -> dict[str, Any] | None:
@@ -30,7 +44,7 @@ def _build_from_action(parsed: dict[str, Any]) -> list[ToolRequest]:
     action = str(parsed.get("action") or parsed.get("operation") or "").lower()
     tool = str(parsed.get("tool") or "").lower()
     command = str(parsed.get("command") or parsed.get("cmd") or "")
-    workspace_id = str(parsed.get("workspace_id") or parsed.get("path") or "default")
+    workspace_id = str(parsed.get("workspace_id") or "default")
     file_name = str(parsed.get("file_name") or parsed.get("filename") or parsed.get("file") or "")
     file_content = str(parsed.get("content") or parsed.get("text") or "")
 
@@ -39,47 +53,65 @@ def _build_from_action(parsed: dict[str, Any]) -> list[ToolRequest]:
         if command:
             try:
                 return [ToolRequest(tool=tool, args=args, reason=parsed.get("reason", f"Execute {tool}"))]
-            except Exception:
+            except ValidationError:
                 pass
-        if file_name and file_content:
-            args["command"] = (f"cat > {file_name} << 'EOF'\n{file_content}\nEOF" if "\n" in file_content
-                               else f"echo '{file_content}' > {file_name}")
+        safe_name = _safe_file_name(file_name)
+        if safe_name and file_content:
+            args["command"] = _write_command(safe_name, file_content)
             try:
                 return [ToolRequest(tool=tool, args=args, reason=parsed.get("reason", f"Write {file_name}"))]
-            except Exception:
+            except ValidationError:
                 pass
 
     if "create_file" in action or "write" in action:
-        cmd = (f"cat > {file_name} << 'EOF'\n{file_content}\nEOF" if "\n" in file_content
-               else f"echo '{file_content}' > {file_name}")
-        if file_name and cmd:
+        safe_name = _safe_file_name(file_name)
+        if safe_name:
             try:
-                return [ToolRequest(tool="filesystem", args={"command": cmd, "workspace_id": workspace_id},
-                                    reason=f"Write {file_name}")]
-            except Exception:
+                return [
+                    ToolRequest(
+                        tool="filesystem",
+                        args={"command": _write_command(safe_name, file_content), "workspace_id": workspace_id},
+                        reason=f"Write {safe_name}",
+                    )
+                ]
+            except ValidationError:
                 pass
 
-    if "run" in action or "execute" in action:
-        if command:
-            try:
-                return [ToolRequest(tool="shell", args={"command": command, "workspace_id": workspace_id},
-                                    reason=parsed.get("reason", "Execute command"))]
-            except Exception:
-                pass
+    if ("run" in action or "execute" in action) and command:
+        try:
+            return [
+                ToolRequest(
+                    tool="shell",
+                    args={"command": command, "workspace_id": workspace_id},
+                    reason=parsed.get("reason", "Execute command"),
+                )
+            ]
+        except ValidationError:
+            pass
 
     if command:
         try:
-            return [ToolRequest(tool="shell", args={"command": command, "workspace_id": workspace_id},
-                                reason=parsed.get("reason", "Execute command"))]
-        except Exception:
+            return [
+                ToolRequest(
+                    tool="shell",
+                    args={"command": command, "workspace_id": workspace_id},
+                    reason=parsed.get("reason", "Execute command"),
+                )
+            ]
+        except ValidationError:
             pass
 
-    if file_name:
-        cmd = f"echo 'Hello from AI' > {file_name}" if not file_content else f"echo '{file_content}' > {file_name}"
+    safe_name = _safe_file_name(file_name)
+    if safe_name:
         try:
-            return [ToolRequest(tool="filesystem", args={"command": cmd, "workspace_id": workspace_id},
-                                reason=f"Create {file_name}")]
-        except Exception:
+            return [
+                ToolRequest(
+                    tool="filesystem",
+                    args={"command": _write_command(safe_name, file_content), "workspace_id": workspace_id},
+                    reason=f"Create {safe_name}",
+                )
+            ]
+        except ValidationError:
             pass
 
     return []
@@ -95,7 +127,7 @@ def parse_tool_requests(text: str) -> list[ToolRequest]:
         for raw in raw_requests:
             try:
                 requests.append(ToolRequest.model_validate(raw))
-            except Exception:
+            except ValidationError:
                 continue
         if requests:
             return requests

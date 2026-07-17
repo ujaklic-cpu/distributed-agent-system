@@ -84,9 +84,9 @@ ROLE_REQUIREMENTS: dict[AgentRole, JobRequirements] = {
     AgentRole.smart_agent: JobRequirements(
         "smart_reasoning",
         False,
-        False,
-        0,
-        2,
+        True,
+        MODEL_CLASSES["smart"]["min_vram_gb"],
+        MODEL_CLASSES["smart"]["min_ram_gb"],
         2,
         "qwen2.5-coder:14b",
         "smart_agent",
@@ -185,12 +185,7 @@ TOOL_REQUIREMENTS: dict[ToolType, JobRequirements] = {
 
 
 def apply_mode_downgrade(requirements: JobRequirements, mode: TaskMode = TaskMode.normal) -> JobRequirements:
-    """Adjust model requirements according to strict/normal/fast/cheap task modes.
-
-    strict keeps the exact class. normal allows code/fast workers without hard GPU.
-    fast and cheap reduce GPU constraints so useful CPU-only nodes can take simple
-    work when no ideal model is loaded.
-    """
+    """Relax model requirements for fast and cheap task modes."""
     if mode == TaskMode.strict:
         return requirements
     if requirements.model_class == "smart":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from base64 import b64encode
 from datetime import UTC, datetime
 
 from shared.schemas import AgentChatRequest, AgentChatResponse, ToolRequest, ToolType
@@ -74,7 +75,7 @@ def mock_chat(request: AgentChatRequest) -> AgentChatResponse:
         }
         return AgentChatResponse(content=json.dumps(optimized, indent=2))
 
-    if "Run the final verification" in system:
+    if "final verifier" in system.lower():
         passed = (
             "Optimized final result" in user_text
             or '"status": "ok"' in user_text
@@ -102,12 +103,25 @@ def mock_chat(request: AgentChatRequest) -> AgentChatResponse:
         return AgentChatResponse(content=json.dumps(evaluation, indent=2))
 
     if not _has_tool_result(request):
-        escaped_goal = user_text.replace("'", "'\\''")[:4000]
-        command = f"""mkdir -p output logs scratch && cat > output/result.md <<'EOF'\n# Phase 5 MVP task result\n\nWorkspace: {workspace_id}\nGenerated at: {datetime.now(UTC).isoformat()}\n\nThe agent completed the assigned delegated task step and produced a durable output artifact.\n\nInput context:\n{escaped_goal}\nEOF\npython - <<'PY'\nfrom pathlib import Path\nassert Path('output/result.md').exists()\nprint(Path('output/result.md').read_text())\nPY"""
+        result_text = (
+            "# Task result\n\n"
+            f"Workspace: {workspace_id}\n"
+            f"Generated at: {datetime.now(UTC).isoformat()}\n\n"
+            "The assigned task completed and produced this output artifact.\n\n"
+            f"Input context:\n{user_text[:4000]}\n"
+        )
+        encoded_result = b64encode(result_text.encode("utf-8")).decode("ascii")
+        command = f"""mkdir -p output logs scratch
+printf %s {encoded_result} | base64 -d > output/result.md
+python3 - <<'PY'
+from pathlib import Path
+assert Path('output/result.md').exists()
+print(Path('output/result.md').read_text())
+PY"""
         tool_request = ToolRequest(
             tool=ToolType.shell,
             args={"command": command, "workspace_id": workspace_id, "network": False},
-            reason="Create the requested MVP artifact inside the assigned workspace.",
+            reason="Create the result artifact inside the assigned workspace.",
         )
         payload = {
             "content": "I need one shell tool run in the disposable workspace container.",
