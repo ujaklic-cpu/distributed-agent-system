@@ -5,6 +5,7 @@ import signal
 import threading
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +148,7 @@ def requeue_active_jobs_for_node_shutdown(node_id: str) -> list[str]:
         )
         for job in rows:
             job.status = "lost"
-            job.lost_at = job.lost_at or __import__("datetime").datetime.now(__import__("datetime").UTC)
+            job.lost_at = job.lost_at or datetime.now(UTC)
             job.error_code = "NODE_SHUTDOWN_REQUEUED"
             job.reserved_cpu_cores = 0
             job.reserved_ram_gb = 0

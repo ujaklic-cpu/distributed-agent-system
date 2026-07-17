@@ -62,6 +62,17 @@ def test_step611_limits_cannot_exceed_tool_metadata():
             )
         )
 
+    with pytest.raises(PolicyViolation):
+        DEFAULT_TOOL_POLICY.validate(
+            ToolJobRequest(
+                task_id="task",
+                tool=ToolType.filesystem,
+                workspace_id="ws",
+                command="find .",
+                limits=ToolLimits(cpus=1, memory="2g", timeout_seconds=120, output_limit_mb=10),
+            )
+        )
+
 
 def test_step611_tool_output_schema_rejects_arbitrary_payload():
     parsed = ToolContainerResult.model_validate(

@@ -254,6 +254,14 @@ class DockerToolRunner:
         result_in_workspace = Path("/workspace") / result_path.relative_to(
             Path(settings.node_workspace_root) / job.workspace_id
         )
+        metadata = self.metadata()[job.tool]
+        workspace_mode = "ro" if metadata.filesystem_policy == "workspace_ro" else "rw"
+        volumes = {host_workspace: {"bind": "/workspace", "mode": workspace_mode}}
+        if workspace_mode == "ro":
+            volumes[str(Path(host_workspace) / ".tool-results")] = {
+                "bind": "/workspace/.tool-results",
+                "mode": "rw",
+            }
         run_options = {
             "image": image,
             "detach": True,
@@ -271,9 +279,7 @@ class DockerToolRunner:
                 "PIP_CACHE_DIR": "/tmp/pip-cache",
                 "XDG_CACHE_HOME": "/tmp/.cache",
             },
-            "volumes": {
-                host_workspace: {"bind": "/workspace", "mode": "rw"},
-            },
+            "volumes": volumes,
             "mem_limit": job.limits.memory,
             "nano_cpus": int(job.limits.cpus * 1_000_000_000),
             "privileged": False,

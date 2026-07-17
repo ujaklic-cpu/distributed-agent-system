@@ -17,7 +17,7 @@ def test_required_files_commands_and_output_type_are_composite_success(tmp_path,
         "required_files": ["result.json"],
         "required_commands": ["test -f result.json"],
         "expected_output_type": "json",
-        "verification_command": "python -m json.tool result.json >/dev/null",
+        "verification_command": "python3 -m json.tool result.json >/dev/null",
     }
     specs = verification.criteria_to_specs(criteria, subtasks=[{"subtask_id": "T1", "success": True}])
     result = verification.verify_all(specs, workspace_id="ws66", text_result='{"ok": true}', artifacts=[])

@@ -62,6 +62,7 @@ def docker_available() -> bool:
     except Exception:
         return False
 
+
 def platform_arch() -> str:
     return platform.machine() or "unknown"
 
@@ -76,4 +77,3 @@ def resource_snapshot() -> dict:
         "docker_available": docker_available(),
         "platform_arch": platform_arch(),
     }
-
