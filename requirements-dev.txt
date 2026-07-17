@@ -2,7 +2,7 @@
 -r node-agent/requirements.txt
 -r agent-server/requirements.txt
 
-pytest==9.0.3
+pytest==9.1.1
 ruff==0.8.4
 pip-audit==2.7.3
 
