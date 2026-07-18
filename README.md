@@ -1,5 +1,7 @@
 # Distributed agent system
 
+Status: active development prototype. Unit tests are Docker-free; Compose integration and production smoke checks require Docker, Postgres, Redis, and configured services.
+
 This project runs delegated model tasks across one or more worker nodes. A FastAPI orchestrator stores task state in Postgres, queues work in Redis, assigns jobs to node agents, and indexes output in a local artifact store. Node agents run model requests and disposable tool containers. Tool containers receive one workspace mount and never receive Docker socket access.
 
 ## Components
@@ -78,3 +80,7 @@ alembic upgrade head
 ```
 
 The production validation entry points are `scripts/validate-clean-checkout.sh` and `scripts/smoke-prod-compose.sh`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
