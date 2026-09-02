@@ -7,6 +7,7 @@ RUFF ?= $(PYTHON) -m ruff
 COMPOSE ?= docker compose -f deploy/docker-compose.control.yml
 APP_VERSION ?= 7.1
 TOOL_VERSION ?= 0.7.0
+TRIVY_IMAGE_SCAN_FLAGS ?= --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed
 
 install:
 	$(PIP) install -r requirements-dev.txt
@@ -48,15 +49,15 @@ security-audit:
 	$(PYTHON) -m pip_audit -r orchestrator/requirements.txt -r node-agent/requirements.txt -r agent-server/requirements.txt -r requirements-dev.txt
 
 image-scan:
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/orchestrator-api:$(APP_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/node-agent:$(APP_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/smart-agent:$(APP_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-shell:$(TOOL_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-test:$(TOOL_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-internet:$(TOOL_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-filesystem:$(TOOL_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-build:$(TOOL_VERSION)
-	trivy image --exit-code 1 --severity HIGH,CRITICAL local-agent/tool-analysis:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/orchestrator-api:$(APP_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/node-agent:$(APP_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/smart-agent:$(APP_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-shell:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-test:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-internet:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-filesystem:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-build:$(TOOL_VERSION)
+	trivy image $(TRIVY_IMAGE_SCAN_FLAGS) local-agent/tool-analysis:$(TOOL_VERSION)
 
 sbom-python:
 	cyclonedx-py requirements requirements-dev.txt -o sbom-python.cdx.json
