@@ -1,4 +1,4 @@
-FROM python:3.12.8-slim
+FROM python:3.14.8-slim
 
 WORKDIR /app
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser
