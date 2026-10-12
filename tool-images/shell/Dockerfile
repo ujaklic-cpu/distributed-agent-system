@@ -1,4 +1,4 @@
-FROM python:3.12.8-slim
+FROM python:3.14.8-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash curl git ca-certificates build-essential \
